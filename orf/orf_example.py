@@ -28,6 +28,8 @@ oforest = OrderedForest(n_estimators=500, min_samples_leaf=5, max_features=0.3)
 oforest.fit(X=features, y=outcome)
 # predict ordered probabilities
 oforest.predict(X=features)
+# predict ordered classes
+oforest.predict(X=features, prob=False)
 # evaluate the prediction performance
 oforest.performance()
 # evaluate marginal effects

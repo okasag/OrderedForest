@@ -180,7 +180,7 @@ class OrderedForest:
         return self
 
     # function to predict with estimated ordered forest
-    def predict(self, X):
+    def predict(self, X, prob=True):
         """
         Ordered Forest prediction.
 
@@ -188,6 +188,10 @@ class OrderedForest:
         ----------
         X : TYPE: pd.DataFrame
             DESCRIPTION: matrix of covariates.
+        prob : TYPE: bool
+            DESCRIPTION: should the ordered probabilities be predicted?
+            If False, ordered classes will be predicted instead.
+            Default is True.
 
         Returns
         -------
@@ -228,6 +232,11 @@ class OrderedForest:
         class_probs[class_probs < 0] = 0
         # normalize predictions to sum up to 1 after non-negativity correction
         class_probs = class_probs.divide(class_probs.sum(axis=1), axis=0)
+        # check if ordered classes instead of ordered probabilities are desired
+        if not prob:
+            # predict classes with highest probability (+1 as idx starts at 0)
+            class_probs = pd.Series((class_probs.values.argmax(axis=1) + 1),
+                                    index=X.index)
         # set the new column names according to specified class labels
         class_probs.columns = labels
 
