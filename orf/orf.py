@@ -244,7 +244,7 @@ class OrderedForest:
         return class_probs
 
     # function to evaluate marginal effects with estimated ordered forest
-    def margin(self, X, verbose=False):
+    def margin(self, X, window=0.1, verbose=False):
         """
         Ordered Forest prediction.
 
@@ -252,6 +252,9 @@ class OrderedForest:
         ----------
         X : TYPE: pd.DataFrame
             DESCRIPTION: matrix of covariates.
+        window : TYPE: float
+            DESCRIPTION: share of standard deviation of X to be used for
+            evaluation of the marginal effect. Default is 0.1.
         verbose : TYPE: bool
             DESCRIPTION: should be the results printed to console?
             Default is False.
@@ -262,35 +265,49 @@ class OrderedForest:
         """
         # check if features X are a pandas dataframe
         self.__xcheck(X)
+        # get a copy to avoid SettingWithCopyWarning
+        X_copy = X.copy()
+        
+        # check the window argument
+        if isinstance(window, float):
+            # check if its within (0,1]
+            if not (window > 0 and window <= 1):
+                # raise value error
+                raise ValueError("window must be within (0,1]"
+                                 ", got %s" % window)
+        else:
+            # raise value error
+            raise ValueError("window must be a float"
+                             ", got %s" % window)
 
         # get the class labels
         labels = list(self.forest['probs'].columns)
         # define the window size share for evaluating the effect
-        h_std = 0.1
+        h_std = window
         # create empty dataframe to store marginal effects
-        margins = pd.DataFrame(index=X.columns, columns=labels)
+        margins = pd.DataFrame(index=X_copy.columns, columns=labels)
 
         # loop over all covariates
-        for x_id in list(X.columns):
+        for x_id in list(X_copy.columns):
             # first check if its dummy, categorical or continuous
-            if list(np.sort(X[x_id].unique())) == [0, 1]:
+            if list(np.sort(X_copy[x_id].unique())) == [0, 1]:
                 # compute the marginal effect as a discrete change in probs
                 # save original values of the dummy variable
-                dummy = np.array(X[x_id])
+                dummy = np.array(X_copy[x_id])
                 # set x=1
-                X[x_id] = 1
-                prob_x1 = self.predict(X=X)
+                X_copy[x_id] = 1
+                prob_x1 = self.predict(X=X_copy)
                 # set x=0
-                X[x_id] = 0
-                prob_x0 = self.predict(X=X)
+                X_copy[x_id] = 0
+                prob_x0 = self.predict(X=X_copy)
                 # take the differences and columns means
                 effect = (prob_x1 - prob_x0).mean(axis=0)
                 # reset the dummy into the original values
-                X[x_id] = dummy
+                X_copy[x_id] = dummy
             else:
                 # compute the marginal effect as continuous change in probs
                 # save original values of the continous variable
-                original = np.array(X[x_id])
+                original = np.array(X_copy[x_id])
                 # get the min and max of x for the support check
                 x_min = original.min()
                 x_max = original.max()
@@ -303,13 +320,13 @@ class OrderedForest:
                 x_up = ((x_up > x_min) * x_up + (x_up <= x_min) *
                         (x_min + h_std * x_std))
                 # check if x is categorical and adjust to integers accordingly
-                if len(X[x_id].unique()) <= 10:
+                if len(X_copy[x_id].unique()) <= 10:
                     # set x_up=ceiling(x_up)
                     x_up = np.ceil(x_up)
                 # replace the x with x_up
-                X[x_id] = x_up
+                X_copy[x_id] = x_up
                 # get orf predictions
-                prob_x1 = self.predict(X=X)
+                prob_x1 = self.predict(X=X_copy)
                 # set x_down=x-h_std*x_std
                 x_down = original - (h_std * x_std)
                 # check if x_down is within the support of x
@@ -318,21 +335,25 @@ class OrderedForest:
                 x_down = ((x_down < x_max) * x_down + (x_down >= x_max) *
                           (x_max - h_std * x_std))
                 # check if x is categorical and adjust to integers accordingly
-                if len(X[x_id].unique()) <= 10:
-                    # set x_down=floor(x_down)
-                    x_down = np.floor(x_down)
+                if len(X_copy[x_id].unique()) <= 10:
+                    # set x_down=ceiling(x_down) or x_down=floor(x_down)
+                    # adjustment such that the difference is always by 1 value
+                    x_down[np.ceil(x_down) == np.ceil(x_up)] = np.floor(
+                        x_down[np.ceil(x_down) == np.ceil(x_up)])
+                    x_down[np.ceil(x_down) != np.ceil(x_up)] = np.ceil(
+                        x_down[np.ceil(x_down) != np.ceil(x_up)])
                 # replace the x with x_down
-                X[x_id] = x_down
+                X_copy[x_id] = x_down
                 # get orf predictions
-                prob_x0 = self.predict(X=X)
+                prob_x0 = self.predict(X=X_copy)
                 # take the differences, scale them and take columns means
                 diff = prob_x1 - prob_x0
                 # define scaling parameter
-                scale = pd.Series((x_up - x_down), index=X.index)
+                scale = pd.Series((x_up - x_down), index=X_copy.index)
                 # rescale the differences and take the column means
                 effect = diff.divide(scale, axis=0).mean(axis=0)
                 # reset x into the original values
-                X[x_id] = original
+                X_copy[x_id] = original
             # assign the effects into the output dataframe
             margins.loc[x_id, :] = effect
 

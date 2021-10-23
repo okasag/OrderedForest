@@ -5,3 +5,9 @@
 *.png
 *.jpeg
 *.jpg
+
+# osx files
+.DS_Store
+
+# cache files
+*.pyc
